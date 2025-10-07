@@ -9,23 +9,32 @@ use defmt::{error, info, println};
 use defmt_rtt as _;
 use embassy_executor::Spawner;
 use embassy_net::{Runner, Stack, StackResources, StaticConfigV4};
-use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
-use embassy_sync::watch::{Receiver, Sender, Watch};
+use embassy_sync::{
+    blocking_mutex::raw::CriticalSectionRawMutex,
+    watch::{Receiver, Sender, Watch},
+};
 use embassy_time::{Duration, Timer};
 use esp_backtrace as _;
-use esp_hal::clock::CpuClock;
-use esp_hal::gpio::{Input, InputConfig, Level, Output, OutputConfig, Pull};
-use esp_hal::rng::Rng;
-use esp_hal::timer::timg::TimerGroup;
+use esp_hal::{
+    clock::CpuClock,
+    ecc::Ecc,
+    gpio::{Input, InputConfig, Level, Output, OutputConfig, Pull},
+    peripherals,
+    rng::{Rng, Trng},
+    sha::Sha,
+    timer::timg::TimerGroup,
+};
 use esp_hal_embassy::main;
-use esp_wifi::EspWifiController;
-use esp_wifi::wifi::WifiDevice;
+use esp_wifi::{EspWifiController, wifi::WifiDevice};
+use esp32_ecdsa::CryptoContext;
 use heapless::Vec;
-
+use p256::{
+    PublicKey, SecretKey,
+    pkcs8::{DecodePrivateKey, DecodePublicKey},
+};
 use transport::connection_task;
 use wifi::wifi_connection;
 
-mod crypto;
 mod transport;
 mod wifi;
 
@@ -93,7 +102,15 @@ async fn main(spawner: Spawner) {
 
     let stack = mk_static!(Stack<'_>, stack);
     let runner = mk_static!(Runner<'_, WifiDevice<'_>>, runner);
-    let rng = mk_static!(Rng, rng);
+
+    let crypto = CryptoContext {
+        sha: Sha::new(peripherals.SHA),
+        ecc: Ecc::new(peripherals.ECC),
+        trng: Trng::new(unsafe { peripherals::RNG::steal() }, peripherals.ADC1), // should be safe as we don't use RNG after this
+        secret_key: SecretKey::from_pkcs8_der(PRIVATE_KEY).expect("Failed to decode secret key"),
+        server_public_key: PublicKey::from_public_key_der(SERVER_PUBLIC_KEY)
+            .expect("Failed to decode server public key"),
+    };
 
     let power_btn_pin = &mut *mk_static!(
         Output<'_>,
@@ -129,9 +146,7 @@ async fn main(spawner: Spawner) {
             stack,
             power_btn_pin,
             update_receiver,
-            peripherals.SHA,
-            peripherals.ECC,
-            rng,
+            crypto,
         ))
         .unwrap();
     spawner

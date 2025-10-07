@@ -27,7 +27,8 @@ embassy-net = { version = "0.7.0", features = [
 ] }
 
 devicectrl-common = { git = "https://github.com/MatthewCash/devicectrl-common.git" }
-anyhow = { version = "1.0.99", default-features = false }
+esp32-ecdsa = { git = "https://github.com/MatthewCash/esp32-ecdsa.git", features = ["esp32c6"] }
+anyhow = { version = "1.0.98", default-features = false }
 esp-wifi = { version = "0.15.0", features = ["esp32c6", "wifi", "defmt"] }
 heapless = { version = "0.8.0", default-features = false }
 smoltcp = { version = "0.12.0", default-features = false, features = [
@@ -48,18 +49,14 @@ static_cell = { version = "2.1.1" }
 critical-section = "1.2.0"
 serde = { version = "1.0.219", default-features = false }
 serde_derive = "1.0.219"
-p256 = { version = "0.13.2", default-features = false, features = [
-    "pkcs8",
-    "bits",
-] }
 serdect = { version = "0.3.0", default-features = false }
-nb = "1.1.0"
-primeorder = "0.13.6"
 serde_json = { version = "1.0.142", default-features = false, features = [
     "alloc",
 ] }
-embassy-sync = "0.7.1"
-embassy-futures = "0.1.1"
+rand_core = "0.9.3"
+p256 = { version = "0.13.2", default-features = false, features = ["pkcs8"] }
+embassy-sync = "0.7.2"
+embassy-futures = "0.1.2"
 
 [profile.dev]
 # Rust debug is too slow.

@@ -1,6 +1,6 @@
-# devicectrl-esp32-acpi-switch
+# devicectrl-esp32-atx-switch
 
-Device implementation for a switch managing ACPI power control running on an esp32c6.
+Device implementation for a switch managing ATX power control running on an esp32c6.
 
 Communication with the [server](https://github.com/MatthewCash/devicectrl-server) consists of ecdsa signed JSON messages, the ecdsa signing and verification is accelerated using the esp32's hardware ecc and sha blocks.
 

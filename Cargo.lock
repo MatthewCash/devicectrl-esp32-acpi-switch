@@ -284,7 +284,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "devicectrl-esp32-acpi-switch"
+name = "devicectrl-esp32-atx-switch"
 version = "0.1.0"
 dependencies = [
  "anyhow",

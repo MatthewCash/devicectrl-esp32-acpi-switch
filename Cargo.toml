@@ -1,7 +1,7 @@
 [package]
-name = "devicectrl-esp32-acpi-switch"
+name = "devicectrl-esp32-atx-switch"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [dependencies]
 esp-backtrace = { version = "0.17.0", features = [

@@ -3,16 +3,15 @@
 
 extern crate alloc;
 
+use core::{net::SocketAddrV4, str::FromStr};
+
 use alloc::string::ToString;
 use anyhow::Error;
-use defmt::{error, info, println};
+use defmt::{error, println};
 use defmt_rtt as _;
+use devicectrl_common::protocol::simple::esp::{TransportChannels, transport_task};
 use embassy_executor::Spawner;
 use embassy_net::{Runner, Stack, StackResources, StaticConfigV4};
-use embassy_sync::{
-    blocking_mutex::raw::CriticalSectionRawMutex,
-    watch::{Receiver, Sender, Watch},
-};
 use embassy_time::{Duration, Timer};
 use esp_backtrace as _;
 use esp_hal::{
@@ -32,10 +31,11 @@ use p256::{
     PublicKey, SecretKey,
     pkcs8::{DecodePrivateKey, DecodePublicKey},
 };
-use transport::connection_task;
 use wifi::wifi_connection;
 
-mod transport;
+use crate::switch::app_task;
+
+mod switch;
 mod wifi;
 
 const DEVICE_ID: &str = env!("DEVICE_ID");
@@ -123,59 +123,31 @@ async fn main(spawner: Spawner) {
             InputConfig::default().with_pull(Pull::Up)
         )
     );
-    let case_led_pin = &mut *mk_static!(
-        Output<'_>,
-        Output::new(peripherals.GPIO18, Level::Low, OutputConfig::default())
-    );
 
-    let update_channel = &*mk_static!(Watch<CriticalSectionRawMutex
-        , bool, 1>, Watch::new());
-    let update_sender = &*mk_static!(
-        Sender<'_, CriticalSectionRawMutex, bool, 1>,
-        update_channel.sender()
-    );
-    let update_receiver = &mut *mk_static!(
-        Receiver<'_, CriticalSectionRawMutex, bool, 1>,
-        update_channel.receiver().unwrap()
-    );
+    let transport = mk_static!(TransportChannels, TransportChannels::new());
+
+    let device_id =
+        devicectrl_common::DeviceId::from(DEVICE_ID).expect("Failed to create device id");
+
+    let server_addr = SocketAddrV4::from_str(env!("SERVER_ADDR")).expect("Invalid server address");
 
     spawner.spawn(wifi_connection(controller)).unwrap();
     spawner.spawn(net_task(runner)).unwrap();
     spawner
-        .spawn(connection_task(
+        .spawn(transport_task(
             stack,
-            power_btn_pin,
-            update_receiver,
+            server_addr,
+            transport,
+            device_id,
             crypto,
         ))
         .unwrap();
     spawner
-        .spawn(case_led_monitor(power_led_pin, case_led_pin, update_sender))
+        .spawn(app_task(power_led_pin, power_btn_pin, transport))
         .unwrap();
 }
 
 #[embassy_executor::task]
 async fn net_task(runner: &'static mut Runner<'static, WifiDevice<'static>>) {
     runner.run().await
-}
-
-#[embassy_executor::task]
-async fn case_led_monitor(
-    power_led_pin: &'static mut Input<'static>,
-    case_led_pin: &'static mut Output<'static>,
-    update_sender: &'static Sender<'static, CriticalSectionRawMutex, bool, 1>,
-) {
-    update_sender.send(power_led_pin.is_low());
-
-    loop {
-        power_led_pin.wait_for_any_edge().await;
-
-        update_sender.send(power_led_pin.is_low());
-
-        info!("Triggering case led power button press");
-
-        case_led_pin.set_high();
-        Timer::after_millis(200).await;
-        case_led_pin.set_low();
-    }
 }

@@ -8,6 +8,7 @@ use devicectrl_common::{
     },
     updates::AttributeUpdate,
 };
+use embassy_futures::select::{Either, select};
 use embassy_time::Timer;
 use esp_hal::gpio::{Input, Output};
 
@@ -20,8 +21,29 @@ pub async fn app_task(
     transport: &'static TransportChannels,
 ) {
     loop {
-        match transport.incoming.receive().await {
-            TransportEvent::Connected => {
+        match select(
+            power_led_pin.wait_for_any_edge(),
+            transport.incoming.receive(),
+        )
+        .await
+        {
+            // Triggered when the power LED changes state
+            Either::First(_) => {
+                transport
+                    .outgoing
+                    .send(ServerBoundSimpleMessage::UpdateNotification(
+                        devicectrl_common::UpdateNotification {
+                            device_id: DeviceId::from(crate::DEVICE_ID).unwrap(),
+                            reachable: true,
+                            new_state: DeviceState::Switch(SwitchState {
+                                power: power_led_pin.is_low(),
+                            }),
+                        },
+                    ))
+                    .await;
+            }
+            // The following cases handle incoming transport events
+            Either::Second(TransportEvent::Connected) => {
                 info!("Connected to server!");
 
                 // This isn't required, but its nice to tell the server our initial state
@@ -38,10 +60,12 @@ pub async fn app_task(
                     ))
                     .await;
             }
-            TransportEvent::Error(err) => {
+            Either::Second(TransportEvent::Error(err)) => {
                 log_error(&err);
             }
-            TransportEvent::Message(DeviceBoundSimpleMessage::UpdateCommand(update)) => {
+            Either::Second(TransportEvent::Message(DeviceBoundSimpleMessage::UpdateCommand(
+                update,
+            ))) => {
                 if update.device_id.as_str() != crate::DEVICE_ID {
                     warn!(
                         "Received update command for different device {}!",
@@ -66,21 +90,10 @@ pub async fn app_task(
                 } else {
                     info!("Not triggering power update");
                 }
-
-                transport
-                    .outgoing
-                    .send(ServerBoundSimpleMessage::UpdateNotification(
-                        devicectrl_common::UpdateNotification {
-                            device_id: DeviceId::from(crate::DEVICE_ID).unwrap(),
-                            reachable: true,
-                            new_state: DeviceState::Switch(SwitchState {
-                                power: new_state.power,
-                            }),
-                        },
-                    ))
-                    .await;
             }
-            TransportEvent::Message(DeviceBoundSimpleMessage::StateQuery { device_id }) => {
+            Either::Second(TransportEvent::Message(DeviceBoundSimpleMessage::StateQuery {
+                device_id,
+            })) => {
                 if device_id.as_str() != crate::DEVICE_ID {
                     warn!(
                         "Received state query for different device {}!",
